@@ -35,11 +35,9 @@ void reportError(cl_int err, const std::string &filename, int line) {
 template<typename T>
 std::vector<T> getVectorParam(std::function<cl_int(cl_uint, T *, cl_uint *)> provider) {
     cl_uint count;
-    cl_int error_code = provider(0, nullptr, &count);
-    OCL_LOG(error_code, "Get values count");
+    OCL_SAFE_CALL(provider(0, nullptr, &count));
     std::vector<T> value(count, nullptr);
-    error_code = provider(count, value.data(), nullptr);
-    OCL_LOG(error_code, "Get values");
+    OCL_SAFE_CALL(provider(count, value.data(), nullptr));
     return value;
 }
 
@@ -50,21 +48,11 @@ std::vector<cl_device_id> getDevices(cl_platform_id platform, cl_uint type) {
 }
 
 cl_device_id find_device() {
-    cl_uint platforms_count = 0;
-    OCL_SAFE_CALL(clGetPlatformIDs(0, nullptr, &platforms_count));
-    std::cout << "Number of OpenCL platforms: " << platforms_count << std::endl;
-    std::vector<cl_platform_id> platforms(platforms_count);
-    OCL_SAFE_CALL(clGetPlatformIDs(platforms_count, platforms.data(), nullptr));
-
+    auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
     cl_device_id cpu_device = nullptr;
 
     for (const auto &platform : platforms) {
-        cl_uint devices_count = 0;
-        OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 0, nullptr, &devices_count));
-        std::cout << "Number of OpenCL devices: " << devices_count << std::endl;
-        std::vector<cl_device_id> devices(devices_count, nullptr);
-        OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, devices_count, devices.data(), nullptr));
-
+        auto devices = getDevices(platform, CL_DEVICE_TYPE_ALL);
         for (const auto &device : devices) {
             cl_device_type type;
             OCL_SAFE_CALL(clGetDeviceInfo(device, CL_DEVICE_TYPE, sizeof(cl_device_type), &type, nullptr));
