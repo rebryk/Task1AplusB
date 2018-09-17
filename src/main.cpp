@@ -32,15 +32,6 @@ void reportError(cl_int err, const std::string &filename, int line) {
 #define OCL_SAFE_CALL(expr) reportError(expr, __FILE__, __LINE__)
 #define OCL_LOG(error_code, msg) if ((error_code) != CL_SUCCESS) OCL_SAFE_CALL(error_code); else std::cout << (msg) << std::endl;
 
-template<typename T>
-std::vector<T> getVectorParam(std::function<cl_int(cl_uint, T *, cl_uint *)> provider) {
-    cl_uint count;
-    OCL_SAFE_CALL(provider(0, nullptr, &count));
-    std::vector<T> value(count, nullptr);
-    OCL_SAFE_CALL(provider(count, value.data(), nullptr));
-    return value;
-}
-
 int main() {
     // Пытаемся слинковаться с символами OpenCL API в runtime (через библиотеку clew)
     if (!ocl_init()) {
@@ -49,7 +40,10 @@ int main() {
 
     // TODO 1 По аналогии с заданием Example0EnumDevices узнайте какие есть устройства, и выберите из них какое-нибудь
     // (если есть хоть одна видеокарта - выберите ее, если нету - выбирайте процессор)
-    auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
+    cl_uint count;
+    OCL_SAFE_CALL(clGetPlatformIDs(0, nullptr, &count));
+    std::vector<cl_platform_id> platforms(count, nullptr);
+    OCL_SAFE_CALL(clGetPlatformIDs(count, platforms.data(), nullptr));
 
     if (platforms.empty()) {
         throw std::runtime_error("No available platforms!");
@@ -57,9 +51,9 @@ int main() {
 
     cl_platform_id platform = *platforms.begin();
 
-    auto devices = getVectorParam<cl_device_id>([=](cl_uint a, cl_device_id *b, cl_uint *c) -> cl_int {
-        return clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, a, b, c);
-    });
+    OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, nullptr, &count));
+    std::vector<cl_device_id> devices(count, nullptr);
+    OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, count, devices.data(), nullptr));
 
     if (devices.empty()) {
         throw std::runtime_error("No available GPU devices!");
