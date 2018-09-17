@@ -41,21 +41,35 @@ std::vector<T> getVectorParam(std::function<cl_int(cl_uint, T *, cl_uint *)> pro
     return value;
 }
 
-cl_device_id find_device(cl_platform_id platform) {
-    auto gpu_devices = getVectorParam<cl_device_id>([=](cl_uint a, cl_device_id *b, cl_uint *c) -> cl_int {
-        return clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, a, b, c);
+std::vector<cl_device_id> getDevices(cl_platform_id platform, cl_uint type) {
+    return getVectorParam<cl_device_id>([=](cl_uint a, cl_device_id *b, cl_uint *c) -> cl_int {
+        return clGetDeviceIDs(platform, type, a, b, c);
     });
+}
 
-    if (!gpu_devices.empty()) {
-        return *gpu_devices.begin();
+cl_device_id find_device() {
+    auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
+
+    if (platforms.empty()) {
+        throw std::runtime_error("No available platforms!");
     }
 
-    auto cpu_devices = getVectorParam<cl_device_id>([=](cl_uint a, cl_device_id *b, cl_uint *c) -> cl_int {
-        return clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, a, b, c);
-    });
+    for (auto platform : platforms) {
+        auto gpu_devices = getDevices(platform, CL_DEVICE_TYPE_GPU);
 
-    if (!cpu_devices.empty()) {
-        return *cpu_devices.begin();
+        if (!gpu_devices.empty()) {
+            std::cout << "GPU device is found!" << std::endl;
+            return *gpu_devices.begin();
+        }
+    }
+
+    for (auto platform : platforms) {
+        auto cpu_devices = getDevices(platform, CL_DEVICE_TYPE_CPU);
+
+        if (!cpu_devices.empty()) {
+            std::cout << "CPU device is found!" << std::endl;
+            return *cpu_devices.begin();
+        }
     }
 
     throw std::runtime_error("No available devices!");
@@ -69,14 +83,7 @@ int main() {
 
     // TODO 1 По аналогии с заданием Example0EnumDevices узнайте какие есть устройства, и выберите из них какое-нибудь
     // (если есть хоть одна видеокарта - выберите ее, если нету - выбирайте процессор)
-    auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
-
-    if (platforms.empty()) {
-        throw std::runtime_error("No available platforms!");
-    }
-
-    cl_platform_id platform = *platforms.begin();
-    cl_device_id device = find_device(platform);
+    cl_device_id device = find_device();
 
     // TODO 2 Создайте контекст с выбранным устройством
     // См. документацию https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/ -> OpenCL Runtime -> Contexts -> clCreateContext
@@ -84,8 +91,7 @@ int main() {
     // код по переданному аргументом errcode_ret указателю)
     // И хорошо бы сразу добавить в конце clReleaseContext (да, не очень RAII, но это лишь пример)
     cl_int error_code;
-    cl_context context = clCreateContext(new long[4]{CL_CONTEXT_PLATFORM, long(platform), NULL, NULL},
-                                         1, new cl_device_id[1]{device}, nullptr, nullptr, &error_code);
+    cl_context context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &error_code);
     OCL_LOG(error_code, "Context is successfully created!");
 
     // TODO 3 Создайте очередь выполняемых команд в рамках выбранного контекста и устройства
