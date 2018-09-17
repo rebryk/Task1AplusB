@@ -50,32 +50,37 @@ std::vector<cl_device_id> getDevices(cl_platform_id platform, cl_uint type) {
 }
 
 cl_device_id find_device() {
-    auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
-    std::cout << "Found #" << to_string(platforms.size()) << " platforms" << std::endl;
+    cl_uint platforms_count = 0;
+    OCL_SAFE_CALL(clGetPlatformIDs(0, nullptr, &platforms_count));
+    std::cout << "Number of OpenCL platforms: " << platforms_count << std::endl;
+    std::vector<cl_platform_id> platforms(platforms_count);
+    OCL_SAFE_CALL(clGetPlatformIDs(platforms_count, platforms.data(), nullptr));
 
-    if (platforms.empty()) {
-        throw std::runtime_error("No available platforms!");
-    }
+    cl_device_id cpu_device = nullptr;
 
-    for (auto platform : platforms) {
-        auto gpu_devices = getDevices(platform, CL_DEVICE_TYPE_GPU);
+    for (const auto &platform : platforms) {
+        cl_uint devices_count = 0;
+        OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 0, nullptr, &devices_count));
+        std::cout << "Number of OpenCL devices: " << devices_count << std::endl;
+        std::vector<cl_device_id> devices(devices_count, nullptr);
+        OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, devices_count, devices.data(), nullptr));
 
-        if (!gpu_devices.empty()) {
-            std::cout << "GPU device is found!" << std::endl;
-            return *gpu_devices.begin();
+        for (const auto &device : devices) {
+            cl_device_type type;
+            OCL_SAFE_CALL(clGetDeviceInfo(device, CL_DEVICE_TYPE, sizeof(cl_device_type), &type, nullptr));
+
+            if (type & CL_DEVICE_TYPE_GPU) {
+                std::cout << "GPU device is found!" << std::endl;
+                return device;
+            }
+
+            if (type & CL_DEVICE_TYPE_CPU) {
+                cpu_device = device;
+            }
         }
     }
 
-    for (auto platform : platforms) {
-        auto cpu_devices = getDevices(platform, CL_DEVICE_TYPE_CPU);
-
-        if (!cpu_devices.empty()) {
-            std::cout << "CPU device is found!" << std::endl;
-            return *cpu_devices.begin();
-        }
-    }
-
-    throw std::runtime_error("No available devices!");
+    return cpu_device;
 }
 
 int main() {
@@ -89,6 +94,10 @@ int main() {
     // (если есть хоть одна видеокарта - выберите ее, если нету - выбирайте процессор)
     std::cout << "Searching for device..." << std::endl;
     cl_device_id device = find_device();
+
+    if (device == nullptr) {
+        throw std::runtime_error("No available devices!");
+    }
 
     // TODO 2 Создайте контекст с выбранным устройством
     // См. документацию https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/ -> OpenCL Runtime -> Contexts -> clCreateContext
