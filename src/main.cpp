@@ -35,9 +35,11 @@ void reportError(cl_int err, const std::string &filename, int line) {
 template<typename T>
 std::vector<T> getVectorParam(std::function<cl_int(cl_uint, T *, cl_uint *)> provider) {
     cl_uint count;
-    OCL_SAFE_CALL(provider(0, nullptr, &count));
+    cl_int error_code = provider(0, nullptr, &count);
+    OCL_LOG(error_code, "Get values count");
     std::vector<T> value(count, nullptr);
-    OCL_SAFE_CALL(provider(count, value.data(), nullptr));
+    error_code = provider(count, value.data(), nullptr);
+    OCL_LOG(error_code, "Get values");
     return value;
 }
 
@@ -49,6 +51,7 @@ std::vector<cl_device_id> getDevices(cl_platform_id platform, cl_uint type) {
 
 cl_device_id find_device() {
     auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
+    std::cout << "Found #" << to_string(platforms.size()) << " platforms" << std::endl;
 
     if (platforms.empty()) {
         throw std::runtime_error("No available platforms!");
@@ -80,9 +83,11 @@ int main() {
     if (!ocl_init()) {
         throw std::runtime_error("Can't init OpenCL driver!");
     }
+    std::cout << "OpenCL driver is initialized!" << std::endl;
 
     // TODO 1 По аналогии с заданием Example0EnumDevices узнайте какие есть устройства, и выберите из них какое-нибудь
     // (если есть хоть одна видеокарта - выберите ее, если нету - выбирайте процессор)
+    std::cout << "Searching for device..." << std::endl;
     cl_device_id device = find_device();
 
     // TODO 2 Создайте контекст с выбранным устройством
