@@ -32,6 +32,35 @@ void reportError(cl_int err, const std::string &filename, int line) {
 #define OCL_SAFE_CALL(expr) reportError(expr, __FILE__, __LINE__)
 #define OCL_LOG(error_code, msg) if ((error_code) != CL_SUCCESS) OCL_SAFE_CALL(error_code); else std::cout << (msg) << std::endl;
 
+template<typename T>
+std::vector<T> getVectorParam(std::function<cl_int(cl_uint, T *, cl_uint *)> provider) {
+    cl_uint count;
+    OCL_SAFE_CALL(provider(0, nullptr, &count));
+    std::vector<T> value(count, nullptr);
+    OCL_SAFE_CALL(provider(count, value.data(), nullptr));
+    return value;
+}
+
+cl_device_id find_device(cl_platform_id platform) {
+    auto gpu_devices = getVectorParam<cl_device_id>([=](cl_uint a, cl_device_id *b, cl_uint *c) -> cl_int {
+        return clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, a, b, c);
+    });
+
+    if (!gpu_devices.empty()) {
+        return *gpu_devices.begin();
+    }
+
+    auto cpu_devices = getVectorParam<cl_device_id>([=](cl_uint a, cl_device_id *b, cl_uint *c) -> cl_int {
+        return clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, a, b, c);
+    });
+
+    if (!cpu_devices.empty()) {
+        return *cpu_devices.begin();
+    }
+
+    throw std::runtime_error("No available devices!");
+}
+
 int main() {
     // Пытаемся слинковаться с символами OpenCL API в runtime (через библиотеку clew)
     if (!ocl_init()) {
@@ -40,26 +69,14 @@ int main() {
 
     // TODO 1 По аналогии с заданием Example0EnumDevices узнайте какие есть устройства, и выберите из них какое-нибудь
     // (если есть хоть одна видеокарта - выберите ее, если нету - выбирайте процессор)
-    cl_uint count;
-    OCL_SAFE_CALL(clGetPlatformIDs(0, nullptr, &count));
-    std::vector<cl_platform_id> platforms(count, nullptr);
-    OCL_SAFE_CALL(clGetPlatformIDs(count, platforms.data(), nullptr));
+    auto platforms = getVectorParam<cl_platform_id>(clGetPlatformIDs);
 
     if (platforms.empty()) {
         throw std::runtime_error("No available platforms!");
     }
 
     cl_platform_id platform = *platforms.begin();
-
-    OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, nullptr, &count));
-    std::vector<cl_device_id> devices(count, nullptr);
-    OCL_SAFE_CALL(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, count, devices.data(), nullptr));
-
-    if (devices.empty()) {
-        throw std::runtime_error("No available GPU devices!");
-    }
-
-    cl_device_id device = *devices.begin();
+    cl_device_id device = find_device(platform);
 
     // TODO 2 Создайте контекст с выбранным устройством
     // См. документацию https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/ -> OpenCL Runtime -> Contexts -> clCreateContext
@@ -99,12 +116,10 @@ int main() {
     // И хорошо бы сразу добавить в конце clReleaseMemObject (аналогично все дальнейшие ресурсы вроде OpenCL под-программы, кернела и т.п. тоже нужно освобождать)
     cl_mem ad = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(float) * n, as.data(),
                                &error_code);
-    OCL_LOG(error_code, "Buffer for a is successfully created!");
     cl_mem bd = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(float) * n, bs.data(),
                                &error_code);
-    OCL_LOG(error_code, "Buffer for b is successfully created!");
     cl_mem cd = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * n, nullptr, &error_code);
-    OCL_LOG(error_code, "Buffer for c is successfully created!");
+
 
     // TODO 6 Выполните TODO 5 (реализуйте кернел в src/cl/aplusb.cl)
     // затем убедитесь что выходит загрузить его с диска (убедитесь что Working directory выставлена правильно - см. описание задания)
@@ -174,9 +189,15 @@ int main() {
         timer t; // Это вспомогательный секундомер, он замеряет время своего создания и позволяет усреднять время нескольких замеров
         for (unsigned int i = 0; i < 20; ++i) {
             cl_event event;
-            OCL_SAFE_CALL(
-                    clEnqueueNDRangeKernel(queue, kernel, 1, nullptr, &global_work_size, &work_group_size, 0, nullptr,
-                                           &event));
+            OCL_SAFE_CALL(clEnqueueNDRangeKernel(queue,
+                                                 kernel,
+                                                 1,
+                                                 nullptr,
+                                                 &global_work_size,
+                                                 &work_group_size,
+                                                 0,
+                                                 nullptr,
+                                                 &event));
             OCL_SAFE_CALL(clWaitForEvents(1, new cl_event[1]{event}));
             t.nextLap(); // При вызове nextLap секундомер запоминает текущий замер (текущий круг) и начинает замерять время следующего круга
         }
